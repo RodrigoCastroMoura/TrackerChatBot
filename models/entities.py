@@ -13,9 +13,9 @@ class Vehicle:
 
 @dataclass
 class User:
-    cpf: str
     name: str
     vehicles: List[Vehicle] = field(default_factory=list)
+    token: Optional[str] = None
 
 @dataclass
 class Session:

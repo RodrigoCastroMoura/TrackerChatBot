@@ -2,56 +2,104 @@ import logging
 from typing import Optional, Dict, List
 from config.settings import Config
 from models.entities import User, Vehicle
+import requests
 
 logger = logging.getLogger(__name__)
 
 class TrackerAPI:
     def __init__(self):
-        self.users = Config.TEST_USERS
+        self.url = Config.API_BASE_URL
+        self.request_timeout = Config.SESSION_TIMEOUT_MINUTES
     
-    def authenticate(self, cpf: str, password: str) -> Optional[User]:
-        cpf_clean = cpf.replace(".", "").replace("-", "").strip()
+    def authenticate(self, identifier: str, password: str, url: str) -> Optional[User]:
         
-        user_data = self.users.get(cpf_clean)
-        if user_data and user_data.get("password") == password:
-            vehicles = [
-                Vehicle(
-                    id=v["id"],
-                    plate=v["plate"],
-                    model=v["model"],
-                    status=v["status"]
-                ) for v in user_data.get("vehicles", [])
-            ]
-            logger.info(f"Usuario {cpf_clean} autenticado com sucesso")
-            return User(cpf=cpf_clean, name=user_data["name"], vehicles=vehicles)
-        
-        logger.warning(f"Falha na autenticacao para CPF: {cpf_clean}")
+        response = requests.post(f"{self.url}/{url}",
+                                     json={
+                                         'identifier': identifier,
+                                         'password': password
+                                     },
+                                     timeout=self.request_timeout)
+        if response.status_code == 200:
+            data = response.json()
+            user = User(
+                name=data['user'].get("name"),
+                token=data['access_token']
+            )
+
+            Vehicle_response = requests.get(f"{self.url}//tracking/vehicles",
+                                     headers={
+                                            'Authorization': f'Bearer {user.token}',
+                                            'Accept': 'application/json',
+                                            'Content-Type': 'application/json'
+                                        },
+                                     timeout=self.request_timeout)
+            
+            if Vehicle_response.status_code == 200:
+                vehicles_data = Vehicle_response.json()
+                vehicles = []
+                for v in vehicles_data["vehicles"]:
+                    vehicle = Vehicle(
+                        id=v.get("id"),
+                        plate=v.get("plate"),
+                        model=v.get("model")
+                    )
+                    vehicles.append(vehicle)
+                user.vehicles = vehicles
+
+            return user
         return None
-    
-    def get_vehicle_location(self, vehicle_id: str) -> Optional[Dict]:
-        locations = {
-            "V001": {
-                "latitude": -23.550520,
-                "longitude": -46.633308,
-                "address": "Av. Paulista, 1000 - Sao Paulo, SP",
-                "speed": 0,
-                "last_update": "2024-01-15 14:30:00"
-            },
-            "V002": {
-                "latitude": -23.561414,
-                "longitude": -46.656167,
-                "address": "Rua Augusta, 500 - Sao Paulo, SP",
-                "speed": 35,
-                "last_update": "2024-01-15 14:28:00"
+
+    def get_vehicle_location(self, vehicle_id: str, token: str) -> Optional[Dict]:
+
+        response = requests.get(f"{self.url}/tracking/vehicles/{vehicle_id}/location",
+                                     headers={
+                                            'Authorization': f'Bearer {token}',
+                                            'Accept': 'application/json',
+                                            'Content-Type': 'application/json'
+                                        },
+                                     timeout=self.request_timeout)
+        if response.status_code == 200:
+            data = response.json()
+            locations = {
+                "latitude": data["location"].get("lat"),
+                "longitude": data["location"].get("lng"),
+                "address": data["location"].get("address"),
+                "speed": data["location"].get("speed"),
+                "last_update": data["location"].get("timestamp")
             }
-        }
-        return locations.get(vehicle_id)
+
+        return locations
     
-    def block_vehicle(self, vehicle_id: str) -> bool:
-        logger.info(f"Veiculo {vehicle_id} bloqueado")
+    def block_vehicle(self, vehicle_id: str, token: str) -> bool:
+    
+        response = requests.post(f"{self.url}/vehicles/{vehicle_id}/block",
+                                headers={
+                                    'Authorization': f'Bearer {token}',
+                                    'Accept': 'application/json',
+                                    'Content-Type': 'application/json'
+                                },
+                                json={"comando": "bloquear"},
+                                timeout=self.request_timeout)
+        
+        if response.status_code != 200:
+            return False
+        
+        logger.info(f"Comando de bloqueio enviado para o veiculo {vehicle_id}")
         return True
     
-    def unblock_vehicle(self, vehicle_id: str) -> bool:
+    def unblock_vehicle(self, vehicle_id: str, token: str) -> bool:
+        response = requests.post(f"{self.url}/vehicles/{vehicle_id}/block",
+                                headers={
+                                    'Authorization': f'Bearer {token}',
+                                    'Accept': 'application/json',
+                                    'Content-Type': 'application/json'
+                                },
+                                json={"comando": "desbloquear"},
+                                timeout=self.request_timeout)
+        
+        if response.status_code != 200:
+            return False
+        
         logger.info(f"Veiculo {vehicle_id} desbloqueado")
         return True
 

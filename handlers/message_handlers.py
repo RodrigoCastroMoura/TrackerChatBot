@@ -3,16 +3,13 @@ from models.entities import Session
 from services.business import business_service
 from services.session_manager import session_manager
 from clients.whatsapp import whatsapp_client
-
+from config.settings import Config
 logger = logging.getLogger(__name__)
 
 class MessageHandler:
+    
     def handle(self, session: Session, message: str, message_type: str = "text") -> None:
         msg_lower = message.lower().strip()
-        
-        if msg_lower in ["menu", "oi", "ola", "inicio", "start"]:
-            self._handle_menu(session)
-            return
         
         if msg_lower == "sair":
             self._handle_logout(session)
@@ -31,7 +28,7 @@ class MessageHandler:
     
     def _handle_menu(self, session: Session) -> None:
         if session.is_authenticated():
-            self._show_main_menu(session)
+            self._show_vehicles(session)
         else:
             session.state = "WAITING_CPF"
             whatsapp_client.send_message(
@@ -41,7 +38,15 @@ class MessageHandler:
             )
     
     def _handle_initial(self, session: Session, message: str) -> None:
-        self._handle_menu(session)
+
+        phone_number = self.remover_caracteres_esquerda(session.phone_number)
+        user = business_service.authenticate_user(phone_number, Config.PASSWORD_CHATBOT_SALT, "auth/customer/chatbot/login")
+        if user:
+            session.user = user
+            session.state = "AUTHENTICATED"
+            self._show_vehicles(session)
+        else:
+            self._handle_menu(session)
     
     def _handle_cpf(self, session: Session, message: str) -> None:
         cpf_clean = message.replace(".", "").replace("-", "").strip()
@@ -61,12 +66,12 @@ class MessageHandler:
         )
     
     def _handle_password(self, session: Session, message: str) -> None:
-        user = business_service.authenticate_user(session.cpf_input, message)
+        user = business_service.authenticate_user(session.cpf_input, message, "auth/customer/login")
         
         if user:
             session.user = user
             session.state = "AUTHENTICATED"
-            self._show_main_menu(session)
+            self._show_vehicles(session)
         else:
             session.state = "WAITING_CPF"
             session.cpf_input = None
@@ -118,30 +123,48 @@ class MessageHandler:
             self._show_main_menu(session)
     
     def _show_vehicles(self, session: Session) -> None:
-        sections = [{
-            "title": "Seus Veiculos",
-            "rows": [
-                {
-                    "id": v.id,
-                    "title": v.plate,
-                    "description": v.model
-                } for v in session.user.vehicles
-            ]
-        }]
+        user = session.user
+          
+        if  session.user.vehicles.count == 0:          
+            whatsapp_client.send_message(
+                session.phone_number,
+                f"Olá, {user.name}!\n\n"
+                f"Você não possui veículos cadastrados no sistema de Rastreamento."
+            )
+
+        elif  session.user.vehicles.count == 1:
+            session.selected_vehicle = session.user.vehicles[0]
+            self._show_vehicle_options(session)
+        else:
+            sections = [{
+                "title": "Seus Veiculos",
+                "rows": [
+                    {
+                        "id": v.id,
+                        "title": v.plate,
+                        "description": v.model
+                    } for v in session.user.vehicles
+                ]
+            }]
+            
+            whatsapp_client.send_list(
+                session.phone_number,
+                f"Olá, {user.name}!\n\n"
+                f"Você esta no sistema de Rastreamento!\n\n"
+                f"Selecione um veiculo para ver opcoes:",
+                "Ver Veiculos",
+                sections
+            )
         
-        whatsapp_client.send_list(
-            session.phone_number,
-            "Selecione um veiculo para ver opcoes:",
-            "Ver Veiculos",
-            sections
-        )
-    
     def _show_vehicle_options(self, session: Session) -> None:
         vehicle = session.selected_vehicle
-        status = "Bloqueado" if vehicle.is_blocked else "Ativo"
-        
+        user = session.user
+        status = "Bloqueado" if vehicle.is_blocked else "Ativo" 
+        greeting = f"Olá, {user.name}!\n\n" if session.user.vehicles.count == 1 else ""
+
         whatsapp_client.send_interactive_buttons(
             session.phone_number,
+            f"{greeting}"
             f"Veiculo: {vehicle.plate}\n"
             f"Modelo: {vehicle.model}\n"
             f"Status: {status}\n\n"
@@ -149,8 +172,10 @@ class MessageHandler:
             [
                 {"id": "localizacao", "title": "Localizacao"},
                 {"id": "bloquear" if not vehicle.is_blocked else "desbloquear", 
-                 "title": "Bloquear" if not vehicle.is_blocked else "Desbloquear"},
-                {"id": "voltar", "title": "Voltar"}
+                "title": "Bloquear" if not vehicle.is_blocked else "Desbloquear"},
+                {"id": "voltar", "title": "Voltar"},
+                {"id": "sair", "title": "Sair"}
+                
             ]
         )
     
@@ -159,7 +184,7 @@ class MessageHandler:
         vehicle = session.selected_vehicle
         
         if msg_lower in ["localizacao", "loc", "l"]:
-            location = business_service.get_vehicle_location(vehicle)
+            location = business_service.get_vehicle_location(vehicle, session)
             if location:
                 whatsapp_client.send_message(
                     session.phone_number,
@@ -177,19 +202,19 @@ class MessageHandler:
             self._show_vehicle_options(session)
         
         elif msg_lower in ["bloquear", "block", "b"]:
-            success, msg = business_service.block_vehicle(vehicle)
+            success, msg = business_service.block_vehicle(vehicle, session)
             whatsapp_client.send_message(session.phone_number, msg)
             self._show_vehicle_options(session)
         
         elif msg_lower in ["desbloquear", "unblock", "u"]:
-            success, msg = business_service.unblock_vehicle(vehicle)
+            success, msg = business_service.unblock_vehicle(vehicle, session)
             whatsapp_client.send_message(session.phone_number, msg)
             self._show_vehicle_options(session)
         
         elif msg_lower in ["voltar", "back", "menu"]:
             session.selected_vehicle = None
             session.state = "AUTHENTICATED"
-            self._show_main_menu(session)
+            self._show_vehicles(session)
         
         else:
             self._show_vehicle_options(session)
@@ -200,7 +225,7 @@ class MessageHandler:
         whatsapp_client.send_message(
             phone,
             "Sessao encerrada com sucesso!\n\n"
-            "Digite *menu* para iniciar novamente."
+            "Muito obrigado por usar o nosso serviços.\n"
         )
     
     def _handle_unknown(self, session: Session, message: str) -> None:
@@ -209,3 +234,13 @@ class MessageHandler:
             "Nao entendi sua mensagem.\n"
             "Digite *menu* para ver as opcoes."
         )
+
+    def remover_caracteres_esquerda(self,numero_str, quantidade=2):
+        """
+        Remove N caracteres da esquerda de uma string
+        
+        Args:
+            numero_str: String a ser processada
+            quantidade: Número de caracteres a remover (padrão: 2)
+        """
+        return numero_str[quantidade:]
