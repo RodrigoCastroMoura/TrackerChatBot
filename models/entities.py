@@ -16,6 +16,7 @@ class User:
     name: str
     vehicles: List[Vehicle] = field(default_factory=list)
     token: Optional[str] = None
+    intrudution_shown: bool = False
 
 @dataclass
 class Session:

@@ -1,5 +1,5 @@
 import logging
-from models.entities import Session
+from models.entities import Session, Vehicle
 from services.business import business_service
 from services.session_manager import session_manager
 from clients.whatsapp import whatsapp_client
@@ -100,41 +100,37 @@ class MessageHandler:
     
     def _handle_authenticated(self, session: Session, message: str) -> None:
         msg_lower = message.lower().strip()
-        
-        if msg_lower in ["ver_veiculos", "veiculos", "v"]:
-            self._show_vehicles(session)
-        elif msg_lower.startswith("v"):
-            vehicle_num = msg_lower.replace("v", "").strip()
-            if vehicle_num.isdigit():
-                idx = int(vehicle_num) - 1
-                if 0 <= idx < len(session.user.vehicles):
-                    session.selected_vehicle = session.user.vehicles[idx]
-                    session.state = "VEHICLE_SELECTED"
-                    self._show_vehicle_options(session)
-                    return
-            self._show_main_menu(session)
+        session.state = "VEHICLE_SELECTED"
+        session.selected_vehicle = self.get_vehicle_by_plate(session, msg_lower)
+        if session.selected_vehicle:
+            self._show_vehicle_options(session)
+            return
         else:
-            for i, v in enumerate(session.user.vehicles):
-                if v.id == message or v.plate.replace("-", "").lower() == msg_lower.replace("-", ""):
-                    session.selected_vehicle = v
-                    session.state = "VEHICLE_SELECTED"
-                    self._show_vehicle_options(session)
-                    return
-            self._show_main_menu(session)
-    
-    def _show_vehicles(self, session: Session) -> None:
-        user = session.user
-          
-        if  session.user.vehicles.count == 0:          
             whatsapp_client.send_message(
                 session.phone_number,
-                f"Olá, {user.name}!\n\n"
+                "Veiculo nao encontrado."
+            )
+            self._show_vehicles_without_indrution(session)
+            return
+          
+    def _show_vehicles(self, session: Session) -> None:
+        user = session.user
+        greeting = f"Olá, {user.name}!\n\n" if not session.user.intrudution_shown else ""
+    
+        if  len(session.user.vehicles) == 0:  
+            session.user.intrudution_shown = True        
+            whatsapp_client.send_message(
+                session.phone_number,
+                f"{greeting}"
                 f"Você não possui veículos cadastrados no sistema de Rastreamento."
             )
+            return
 
-        elif  session.user.vehicles.count == 1:
+        elif len(session.user.vehicles) == 1:
             session.selected_vehicle = session.user.vehicles[0]
+            session.state = "VEHICLE_SELECTED"
             self._show_vehicle_options(session)
+            return
         else:
             sections = [{
                 "title": "Seus Veiculos",
@@ -146,22 +142,24 @@ class MessageHandler:
                     } for v in session.user.vehicles
                 ]
             }]
-            
+            session.user.intrudution_shown = True
+            session.state = "AUTHENTICATED"
             whatsapp_client.send_list(
                 session.phone_number,
-                f"Olá, {user.name}!\n\n"
+                f"{greeting}",
                 f"Você esta no sistema de Rastreamento!\n\n"
                 f"Selecione um veiculo para ver opcoes:",
                 "Ver Veiculos",
                 sections
             )
-        
+            return
+  
     def _show_vehicle_options(self, session: Session) -> None:
         vehicle = session.selected_vehicle
         user = session.user
-        status = "Bloqueado" if vehicle.is_blocked else "Ativo" 
-        greeting = f"Olá, {user.name}!\n\n" if session.user.vehicles.count == 1 else ""
-
+        status = "Bloqueado" if vehicle.is_blocked else "Desbloqueado" 
+        greeting = f"Olá, {user.name}!\n\n" if len(session.user.vehicles) == 1 and not session.user.intrudution_shown else ""
+        session.user.intrudution_shown = True
         whatsapp_client.send_interactive_buttons(
             session.phone_number,
             f"{greeting}"
@@ -173,49 +171,74 @@ class MessageHandler:
                 {"id": "localizacao", "title": "Localizacao"},
                 {"id": "bloquear" if not vehicle.is_blocked else "desbloquear", 
                 "title": "Bloquear" if not vehicle.is_blocked else "Desbloquear"},
-                {"id": "voltar", "title": "Voltar"},
-                {"id": "sair", "title": "Sair"}
-                
+                {"id": "sair"  if len(session.user.vehicles) == 1  else "menu", 
+                "title": "Sair" if len(session.user.vehicles) == 1 else "Menu"}
+               
             ]
         )
     
     def _handle_vehicle_action(self, session: Session, message: str) -> None:
         msg_lower = message.lower().strip()
         vehicle = session.selected_vehicle
-        
+
+        # Define os botões baseado na quantidade de veículos
+        if len(session.user.vehicles) == 1:
+            buttons = [
+                {"id": "voltar", "title": "Voltar"},
+                {"id": "sair", "title": "Sair"}
+            ]
+        else:
+            buttons = [
+                {"id": "voltar", "title": "Voltar"},
+                {"id": "menu", "title": "Menu"},
+                {"id": "sair", "title": "Sair"}
+            ]
+     
         if msg_lower in ["localizacao", "loc", "l"]:
             location = business_service.get_vehicle_location(vehicle, session)
             if location:
-                whatsapp_client.send_message(
+                whatsapp_client.send_interactive_buttons(
                     session.phone_number,
-                    f"Localizacao de {vehicle.plate}:\n\n"
+                    f"Localizacao do veiculo modelo {vehicle.model} de placa {vehicle.plate}:\n\n"
                     f"Endereco: {location['address']}\n"
                     f"Velocidade: {location['speed']} km/h\n"
                     f"Ultima atualizacao: {location['last_update']}\n\n"
-                    f"Maps: https://maps.google.com/?q={location['latitude']},{location['longitude']}"
+                    f"Maps: https://maps.google.com/?q={location['latitude']},{location['longitude']}\n\n"
+                    "Escolha uma opcao:",
+                    buttons
                 )
             else:
-                whatsapp_client.send_message(
+                whatsapp_client.send_interactive_buttons(
                     session.phone_number,
-                    "Nao foi possivel obter a localizacao. Tente novamente."
+                    "Nao foi possivel obter a localizacao. Tente novamente.",
+                    buttons
                 )
-            self._show_vehicle_options(session)
-        
+               
         elif msg_lower in ["bloquear", "block", "b"]:
             success, msg = business_service.block_vehicle(vehicle, session)
-            whatsapp_client.send_message(session.phone_number, msg)
-            self._show_vehicle_options(session)
+            whatsapp_client.send_interactive_buttons(
+                    session.phone_number,
+                    f"{msg}\n\n"
+                    "Escolha uma opcao:",
+                    buttons
+                )
         
         elif msg_lower in ["desbloquear", "unblock", "u"]:
             success, msg = business_service.unblock_vehicle(vehicle, session)
-            whatsapp_client.send_message(session.phone_number, msg)
-            self._show_vehicle_options(session)
+            whatsapp_client.send_interactive_buttons(
+                    session.phone_number,
+                    f"{msg}\n\n"
+                    "Escolha uma opcao:",
+                    buttons
+                )
         
-        elif msg_lower in ["voltar", "back", "menu"]:
+        elif msg_lower in ["voltar", "back"]:
+             self._show_vehicle_options(session)
+        
+        elif msg_lower in ["menu"]:
             session.selected_vehicle = None
-            session.state = "AUTHENTICATED"
             self._show_vehicles(session)
-        
+
         else:
             self._show_vehicle_options(session)
     
@@ -244,3 +267,11 @@ class MessageHandler:
             quantidade: Número de caracteres a remover (padrão: 2)
         """
         return numero_str[quantidade:]
+    
+    def get_vehicle_by_plate(self, session: Session, plate: str) -> Vehicle | None:
+        for vehicle in session.user.vehicles:
+            if vehicle.plate.lower().strip() == plate:
+                return vehicle
+            if vehicle.model.lower().strip() == plate:
+                return vehicle
+        return None
