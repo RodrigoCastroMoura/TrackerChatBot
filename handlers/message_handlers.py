@@ -146,7 +146,7 @@ class MessageHandler:
             session.state = "AUTHENTICATED"
             whatsapp_client.send_list(
                 session.phone_number,
-                f"{greeting}",
+                f"{greeting}"
                 f"Você esta no sistema de Rastreamento!\n\n"
                 f"Selecione um veiculo para ver opcoes:",
                 "Ver Veiculos",
