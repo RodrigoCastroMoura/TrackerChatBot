@@ -158,7 +158,7 @@ class MessageHandler:
         vehicle = session.selected_vehicle
         user = session.user
         status = "Bloqueado" if vehicle.is_blocked else "Desbloqueado" 
-        greeting = f"Olá, {user.name}!\n\n" if len(session.user.vehicles) == 1 and not session.user.intrudution_shown else ""
+        greeting = f"Olá, {user.name}!\n\n Você esta no sistema de Rastreamento!\n\n" if len(session.user.vehicles) == 1 and not session.user.intrudution_shown else "Você esta no sistema de Rastreamento!\n\n"
         session.user.intrudution_shown = True
         whatsapp_client.send_interactive_buttons(
             session.phone_number,
