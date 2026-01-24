@@ -88,7 +88,7 @@ def webhook():
                         if interactive.get("type") == "button_reply":
                             text = interactive.get("button_reply", {}).get("id", "")
                         elif interactive.get("type") == "list_reply":
-                            text = interactive.get("list_reply", {}).get("id", "")
+                            text = interactive.get("list_reply", {}).get("title", "")
                         else:
                             text = ""
                     else:
