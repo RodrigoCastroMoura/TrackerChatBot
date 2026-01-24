@@ -110,7 +110,7 @@ class MessageHandler:
                 session.phone_number,
                 "Veiculo nao encontrado."
             )
-            self._show_vehicles_without_indrution(session)
+            self._show_vehicles(session)
             return
           
     def _show_vehicles(self, session: Session) -> None:
