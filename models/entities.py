@@ -10,6 +10,7 @@ class Vehicle:
     status: str = "active"
     last_location: Optional[dict] = None
     is_blocked: bool = False
+    blocked: str =''
 
 @dataclass
 class User:

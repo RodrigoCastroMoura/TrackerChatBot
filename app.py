@@ -70,17 +70,33 @@ def webhook():
         if not data:
             return jsonify({"status": "no data"}), 200
         
+        # Log do payload completo para debug
+        logger.debug(f"Webhook payload: {data}")
+        
         entry = data.get("entry", [])
         for e in entry:
             changes = e.get("changes", [])
             for change in changes:
                 value = change.get("value", {})
-                messages = value.get("messages", [])
                 
+                # Ignora notificações de status (delivered, read, sent, etc)
+                if "statuses" in value:
+                    logger.debug("Ignorando notificacao de status")
+                    continue
+                
+                messages = value.get("messages", [])
                 for msg in messages:
+                    # Extrai o ID único da mensagem para deduplicação
+                    message_id = msg.get("id")
+                    if not message_id:
+                        logger.warning("Mensagem sem ID recebida - pulando")
+                        continue
+                    
                     phone_number = msg.get("from", "")
                     message_type = msg.get("type", "text")
                     
+                    # Extrai o texto baseado no tipo de mensagem
+                    text = ""
                     if message_type == "text":
                         text = msg.get("text", {}).get("body", "")
                     elif message_type == "interactive":
@@ -88,19 +104,25 @@ def webhook():
                         if interactive.get("type") == "button_reply":
                             text = interactive.get("button_reply", {}).get("id", "")
                         elif interactive.get("type") == "list_reply":
-                            text = interactive.get("list_reply", {}).get("title", "")
+                            # Para lista, usamos o ID ao invés do title
+                            text = interactive.get("list_reply", {}).get("id", "")
                         else:
                             text = ""
                     else:
-                        text = ""
+                        # Ignora outros tipos de mensagem (imagem, áudio, etc)
+                        logger.info(f"Tipo de mensagem nao suportado: {message_type}")
+                        continue
                     
                     if phone_number and text:
-                        orchestrator.process_message(phone_number, text, message_type)
+                        logger.info(f"Processando mensagem ID: {message_id}, de: {phone_number}, tipo: {message_type}")
+                        orchestrator.process_message(phone_number, text, message_type, message_id)
+                    else:
+                        logger.warning(f"Mensagem invalida - phone: {phone_number}, text: '{text}'")
         
         return jsonify({"status": "ok"}), 200
     
     except Exception as e:
-        logger.error(f"Erro no webhook: {e}")
+        logger.error(f"Erro no webhook: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/", methods=["GET"])

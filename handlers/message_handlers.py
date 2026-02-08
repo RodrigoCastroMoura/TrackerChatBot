@@ -38,15 +38,21 @@ class MessageHandler:
             )
     
     def _handle_initial(self, session: Session, message: str) -> None:
-
-        phone_number = self.remover_caracteres_esquerda(session.phone_number)
-        user = business_service.authenticate_user(phone_number, Config.PASSWORD_CHATBOT_SALT, "auth/customer/chatbot/login")
-        if user:
-            session.user = user
-            session.state = "AUTHENTICATED"
+        if session.is_authenticated():
             self._show_vehicles(session)
+            return
         else:
-            self._handle_menu(session)
+            phone_number = self.remover_caracteres_esquerda(session.phone_number)
+            user = business_service.authenticate_user(phone_number, Config.PASSWORD_CHATBOT_SALT, "auth/customer/chatbot/login")
+
+            if user:
+                session.user = user
+                session.state = "AUTHENTICATED"
+                self._show_vehicles(session)
+                return
+            else:
+                self._handle_menu(session)
+                return
     
     def _handle_cpf(self, session: Session, message: str) -> None:
         cpf_clean = message.replace(".", "").replace("-", "").strip()
@@ -100,9 +106,17 @@ class MessageHandler:
     
     def _handle_authenticated(self, session: Session, message: str) -> None:
         msg_lower = message.lower().strip()
-        session.state = "VEHICLE_SELECTED"
-        session.selected_vehicle = self.get_vehicle_by_plate(session, msg_lower)
-        if session.selected_vehicle:
+        
+        # Primeiro tenta encontrar o veículo pelo ID (quando vem de uma lista interativa)
+        vehicle = self.get_vehicle_by_id(session, message)
+        
+        # Se não encontrou pelo ID, tenta pela placa ou modelo
+        if not vehicle:
+            vehicle = self.get_vehicle_by_plate(session, msg_lower)
+        
+        if vehicle:
+            session.state = "VEHICLE_SELECTED"
+            session.selected_vehicle = vehicle
             self._show_vehicle_options(session)
             return
         else:
@@ -117,7 +131,7 @@ class MessageHandler:
         user = session.user
         greeting = f"Olá, {user.name}!\n\n" if not session.user.intrudution_shown else ""
     
-        if  len(session.user.vehicles) == 0:  
+        if len(session.user.vehicles) == 0:  
             session.user.intrudution_shown = True        
             whatsapp_client.send_message(
                 session.phone_number,
@@ -136,7 +150,7 @@ class MessageHandler:
                 "title": "Seus Veiculos",
                 "rows": [
                     {
-                        "id": v.id,
+                        "id": v.id,  # Usa o ID do veículo
                         "title": v.plate,
                         "description": v.model
                     } for v in session.user.vehicles
@@ -171,9 +185,8 @@ class MessageHandler:
                 {"id": "localizacao", "title": "Localizacao"},
                 {"id": "bloquear" if not vehicle.is_blocked else "desbloquear", 
                 "title": "Bloquear" if not vehicle.is_blocked else "Desbloquear"},
-                {"id": "sair"  if len(session.user.vehicles) == 1  else "menu", 
+                {"id": "sair" if len(session.user.vehicles) == 1 else "menu", 
                 "title": "Sair" if len(session.user.vehicles) == 1 else "Menu"}
-               
             ]
         )
     
@@ -240,6 +253,8 @@ class MessageHandler:
             self._show_vehicles(session)
 
         else:
+            # Se não reconheceu o comando, volta para as opções do veículo
+            logger.warning(f"Comando não reconhecido no estado VEHICLE_SELECTED: {message}")
             self._show_vehicle_options(session)
     
     def _handle_logout(self, session: Session) -> None:
@@ -258,7 +273,7 @@ class MessageHandler:
             "Digite *menu* para ver as opcoes."
         )
 
-    def remover_caracteres_esquerda(self,numero_str, quantidade=2):
+    def remover_caracteres_esquerda(self, numero_str, quantidade=2):
         """
         Remove N caracteres da esquerda de uma string
         
@@ -268,7 +283,19 @@ class MessageHandler:
         """
         return numero_str[quantidade:]
     
+    def get_vehicle_by_id(self, session: Session, vehicle_id: str) -> Vehicle | None:
+        """
+        Busca um veículo pelo ID (usado quando vem de lista interativa)
+        """
+        for vehicle in session.user.vehicles:
+            if vehicle.id == vehicle_id:
+                return vehicle
+        return None
+    
     def get_vehicle_by_plate(self, session: Session, plate: str) -> Vehicle | None:
+        """
+        Busca um veículo pela placa ou modelo (usado para input de texto)
+        """
         for vehicle in session.user.vehicles:
             if vehicle.plate.lower().strip() == plate:
                 return vehicle

@@ -41,7 +41,9 @@ class TrackerAPI:
                     vehicle = Vehicle(
                         id=v.get("id"),
                         plate=v.get("plate"),
-                        model=v.get("model")
+                        model=v.get("model"),
+                        blocked=v.get("block"),
+                        is_blocked=v.get("block") == "bloqueado"
                     )
                     vehicles.append(vehicle)
                 user.vehicles = vehicles
