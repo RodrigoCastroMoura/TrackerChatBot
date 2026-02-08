@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from models.entities import Session, Vehicle
 from services.business import business_service
 from services.session_manager import session_manager
@@ -108,19 +109,33 @@ class MessageHandler:
     def _handle_authenticated(self, session: Session, message: str, message_type: str = "text") -> None:
         msg_lower = message.lower().strip()
         
+        logger.info(f"=== HANDLE_AUTHENTICATED ===")
+        logger.info(f"Phone: {session.phone_number}")
+        logger.info(f"Message: '{message}'")
+        logger.info(f"Message_type: '{message_type}'")
+        logger.info(f"Estado atual: {session.state}")
+        logger.info(f"Veiculo atual selecionado: {session.selected_vehicle.plate if session.selected_vehicle else 'None'}")
+        
         # Busca veículo por ID (lista) ou placa (texto)
         vehicle = None
         if message_type == "interactive":
+            logger.info(f"Buscando veiculo por ID: '{message}'")
             vehicle = self.get_vehicle_by_id(session, message)
+            logger.info(f"Veiculo encontrado por ID: {vehicle.plate if vehicle else 'None'}")
         if not vehicle:
+            logger.info(f"Buscando veiculo por placa: '{msg_lower}'")
             vehicle = self.get_vehicle_by_plate(session, msg_lower)
+            logger.info(f"Veiculo encontrado por placa: {vehicle.plate if vehicle else 'None'}")
         
         if vehicle:
+            logger.info(f"ATUALIZANDO selected_vehicle DE {session.selected_vehicle.plate if session.selected_vehicle else 'None'} PARA {vehicle.plate}")
             session.state = "VEHICLE_SELECTED"
             session.selected_vehicle = vehicle
+            logger.info(f"selected_vehicle atualizado: {session.selected_vehicle.plate}")
             self._show_vehicle_options(session)
             return
         else:
+            logger.warning(f"Veiculo nao encontrado para mensagem: '{message}'")
             whatsapp_client.send_message(
                 session.phone_number,
                 "Veiculo nao encontrado."
@@ -196,6 +211,12 @@ class MessageHandler:
     def _handle_vehicle_action(self, session: Session, message: str, message_type: str = "text") -> None:
         msg_lower = message.lower().strip()
         vehicle = session.selected_vehicle
+        
+        logger.info(f"=== HANDLE_VEHICLE_ACTION ===")
+        logger.info(f"Phone: {session.phone_number}")
+        logger.info(f"Message: '{message}'")
+        logger.info(f"Estado: {session.state}")
+        logger.info(f"Veiculo selecionado: {vehicle.plate if vehicle else 'None'} (ID: {vehicle.id if vehicle else 'None'})")
 
         # Define os botões baseado na quantidade de veículos
         if len(session.user.vehicles) == 1:
@@ -285,7 +306,7 @@ class MessageHandler:
         """
         return numero_str[quantidade:]
     
-    def get_vehicle_by_plate(self, session: Session, plate: str) -> Vehicle | None:
+    def get_vehicle_by_plate(self, session: Session, plate: str) -> Optional[Vehicle]:
         for vehicle in session.user.vehicles:
             if vehicle.plate.lower().strip() == plate:
                 return vehicle
@@ -293,9 +314,18 @@ class MessageHandler:
                 return vehicle
         return None
     
-    def get_vehicle_by_id(self, session: Session, vehicle_id: str) -> Vehicle | None:
+    def get_vehicle_by_id(self, session: Session, vehicle_id: str) -> Optional[Vehicle]:
         """Busca veículo pelo ID (usado em lista interativa)"""
+        logger.info(f"=== GET_VEHICLE_BY_ID ===")
+        logger.info(f"Buscando ID: '{vehicle_id}'")
+        logger.info(f"Veiculos disponiveis:")
+        for v in session.user.vehicles:
+            logger.info(f"  - {v.plate}: ID='{v.id}' (match: {str(v.id).strip() == str(vehicle_id).strip()})")
+        
         for vehicle in session.user.vehicles:
             if str(vehicle.id).strip() == str(vehicle_id).strip():
+                logger.info(f"MATCH! Veiculo encontrado: {vehicle.plate}")
                 return vehicle
+        
+        logger.warning(f"Nenhum veiculo encontrado com ID: '{vehicle_id}'")
         return None
