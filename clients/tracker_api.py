@@ -52,25 +52,30 @@ class TrackerAPI:
         return None
 
     def get_vehicle_location(self, vehicle_id: str, token: str) -> Optional[Dict]:
-
-        response = requests.get(f"{self.url}/tracking/vehicles/{vehicle_id}/location",
-                                     headers={
-                                            'Authorization': f'Bearer {token}',
-                                            'Accept': 'application/json',
-                                            'Content-Type': 'application/json'
-                                        },
-                                     timeout=self.request_timeout)
-        if response.status_code == 200:
-            data = response.json()
-            locations = {
-                "latitude": data["location"].get("lat"),
-                "longitude": data["location"].get("lng"),
-                "address": data["location"].get("address"),
-                "speed": data["location"].get("speed"),
-                "last_update": data["location"].get("timestamp")
-            }
-
-        return locations
+        try:
+            response = requests.get(f"{self.url}/tracking/vehicles/{vehicle_id}/location",
+                                         headers={
+                                                'Authorization': f'Bearer {token}',
+                                                'Accept': 'application/json',
+                                                'Content-Type': 'application/json'
+                                            },
+                                         timeout=self.request_timeout)
+            if response.status_code == 200:
+                data = response.json()
+                locations = {
+                    "latitude": data["location"].get("lat"),
+                    "longitude": data["location"].get("lng"),
+                    "address": data["location"].get("address"),
+                    "speed": data["location"].get("speed"),
+                    "last_update": data["location"].get("timestamp")
+                }
+                return locations
+            
+            logger.warning(f"Erro ao buscar localizacao: status {response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Excecao ao buscar localizacao do veiculo {vehicle_id}: {e}")
+            return None
     
     def block_vehicle(self, vehicle_id: str, token: str) -> bool:
     
