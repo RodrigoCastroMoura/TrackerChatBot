@@ -70,49 +70,56 @@ def webhook():
         if not data:
             return jsonify({"status": "no data"}), 200
         
-        entry = data.get("entry", [])
-        for e in entry:
-            changes = e.get("changes", [])
-            for change in changes:
+        # Processar cada entrada
+        for entry in data.get("entry", []):
+            for change in entry.get("changes", []):
                 value = change.get("value", {})
                 
-                # Filtrar notificações de status (read receipts, etc)
+                # CRÍTICO: Ignorar notificações de status (read receipts, delivery, etc)
                 if "statuses" in value:
+                    logger.debug("Ignorando notificacao de status")
                     continue
                 
-                messages = value.get("messages", [])
-                for msg in messages:
+                # Processar mensagens
+                for msg in value.get("messages", []):
                     phone_number = msg.get("from", "")
                     message_type = msg.get("type", "text")
-                    message_id = msg.get("id")  # ID único da mensagem para deduplicação
+                    message_id = msg.get("id")  # ID único para deduplicação
                     
+                    # Extrair texto da mensagem
+                    text = ""
                     if message_type == "text":
                         text = msg.get("text", {}).get("body", "")
                     elif message_type == "interactive":
                         interactive = msg.get("interactive", {})
-                        if interactive.get("type") == "button_reply":
+                        interactive_type = interactive.get("type")
+                        
+                        if interactive_type == "button_reply":
                             text = interactive.get("button_reply", {}).get("id", "")
-                        elif interactive.get("type") == "list_reply":
-                            text = interactive.get("list_reply", {}).get("id", "")  # USA ID, NÃO TITLE!
+                        elif interactive_type == "list_reply":
+                            # CRÍTICO: Usar ID, não title!
+                            text = interactive.get("list_reply", {}).get("id", "")
                         else:
-                            text = ""
-                    else:
-                        text = ""
+                            logger.warning(f"Tipo interativo desconhecido: {interactive_type}")
                     
+                    # Processar mensagem se tiver conteúdo
                     if phone_number and text:
+                        logger.info(f"Processando: {phone_number} | {message_type} | '{text}' | ID: {message_id}")
                         orchestrator.process_message(phone_number, text, message_type, message_id)
+                    else:
+                        logger.debug(f"Mensagem ignorada - phone: {phone_number}, text: '{text}'")
         
         return jsonify({"status": "ok"}), 200
     
     except Exception as e:
-        logger.error(f"Erro no webhook: {e}")
+        logger.error(f"Erro no webhook: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def index():
     return jsonify({
         "name": "WhatsApp Chatbot - Sistema de Rastreamento",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "running",
         "endpoints": {
             "/health": "Health check",

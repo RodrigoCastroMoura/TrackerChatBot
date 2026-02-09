@@ -6,6 +6,7 @@ from clients.tracker_api import tracker_api
 logger = logging.getLogger(__name__)
 
 class BusinessService:
+    
     def __init__(self):
         self.api = tracker_api
     
