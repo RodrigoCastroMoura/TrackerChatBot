@@ -76,18 +76,16 @@ def webhook():
             for change in changes:
                 value = change.get("value", {})
                 
-                # Ignora notificações de status
+                # Filtrar notificações de status (read receipts, etc)
                 if "statuses" in value:
                     continue
-                    
+                
                 messages = value.get("messages", [])
                 for msg in messages:
-                    message_id = msg.get("id")
-                    if not message_id:
-                        continue
-                        
                     phone_number = msg.get("from", "")
                     message_type = msg.get("type", "text")
+                    message_id = msg.get("id")  # ID único da mensagem para deduplicação
+                    
                     if message_type == "text":
                         text = msg.get("text", {}).get("body", "")
                     elif message_type == "interactive":
@@ -95,7 +93,7 @@ def webhook():
                         if interactive.get("type") == "button_reply":
                             text = interactive.get("button_reply", {}).get("id", "")
                         elif interactive.get("type") == "list_reply":
-                            text = interactive.get("list_reply", {}).get("id", "")
+                            text = interactive.get("list_reply", {}).get("id", "")  # USA ID, NÃO TITLE!
                         else:
                             text = ""
                     else:

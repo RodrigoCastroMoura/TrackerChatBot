@@ -16,6 +16,11 @@ class BusinessService:
         return self.api.get_vehicle_location(vehicle.id, session.user.token)
     
     def block_vehicle(self, vehicle: Vehicle, session: Session) -> Tuple[bool, str]:
+        logger.error(f"!!! BLOQUEANDO VEICULO !!!")
+        logger.error(f"Placa: {vehicle.plate}")
+        logger.error(f"ID: {vehicle.id}")
+        logger.error(f"Modelo: {vehicle.model}")
+        
         success = self.api.block_vehicle(vehicle.id, session.user.token)
         if success:
             vehicle.is_blocked = True
@@ -23,6 +28,11 @@ class BusinessService:
         return False, "Erro ao bloquear veiculo. Tente novamente."
 
     def unblock_vehicle(self, vehicle: Vehicle, session: Session) -> Tuple[bool, str]:
+        logger.error(f"!!! DESBLOQUEANDO VEICULO !!!")
+        logger.error(f"Placa: {vehicle.plate}")
+        logger.error(f"ID: {vehicle.id}")
+        logger.error(f"Modelo: {vehicle.model}")
+        
         success = self.api.unblock_vehicle(vehicle.id, session.user.token)
         if success:
             vehicle.is_blocked = False

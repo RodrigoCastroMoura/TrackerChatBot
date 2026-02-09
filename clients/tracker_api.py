@@ -70,11 +70,11 @@ class TrackerAPI:
                     "last_update": data["location"].get("timestamp")
                 }
                 return locations
-            
-            logger.warning(f"Erro ao buscar localizacao: status {response.status_code}")
-            return None
+            else:
+                logger.warning(f"Falha ao obter localização: status {response.status_code}")
+                return None
         except Exception as e:
-            logger.error(f"Excecao ao buscar localizacao do veiculo {vehicle_id}: {e}")
+            logger.error(f"Erro ao obter localização do veículo {vehicle_id}: {e}")
             return None
     
     def block_vehicle(self, vehicle_id: str, token: str) -> bool:
