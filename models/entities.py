@@ -22,7 +22,7 @@ class User:
 @dataclass
 class Session:
     phone_number: str
-    state: str = "INITIAL"
+    state: str = "UNAUTHENTICATED"
     user: Optional[User] = None
     cpf_input: Optional[str] = None
     selected_vehicle: Optional[Vehicle] = None

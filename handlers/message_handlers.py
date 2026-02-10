@@ -3,6 +3,7 @@ from typing import Optional
 from models.entities import Session, Vehicle
 from services.business import business_service
 from clients.whatsapp import whatsapp_client
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -46,36 +47,47 @@ class MessageHandler:
         msg_lower = message.lower().strip()
         
         logger.info(f"[UNAUTH] {session.phone_number}: '{message}'")
-        
-        # Comandos de autenticação
-        if "," in message:
-            parts = [p.strip() for p in message.split(",")]
-            if len(parts) >= 2:
-                identifier = parts[0]
-                password = parts[1]
-                
-                # Tentar autenticar
-                user = business_service.authenticate_user(identifier, password, "auth/login")
-                
-                if user and len(user.vehicles) > 0:
-                    session.user = user
-                    session.user.intrudution_shown = False
-                    session.state = "AUTHENTICATED"
-                    logger.info(f"[AUTH] Usuário autenticado: {user.name}, {len(user.vehicles)} veículos")
-                    self._show_vehicles(session)
-                else:
-                    whatsapp_client.send_message(
-                        session.phone_number,
-                        "Credenciais invalidas ou nenhum veiculo encontrado.\n\n"
-                        "Envie: CPF,SENHA"
-                    )
+
+        phone_number = self.remover_caracteres_esquerda(session.phone_number)
+
+        user = business_service.authenticate_user(phone_number, Config.PASSWORD_CHATBOT_SALT, "auth/customer/chatbot/login")
+
+        if user:
+            session.user = user
+            session.user.intrudution_shown = False
+            session.state = "AUTHENTICATED"
+            logger.info(f"[AUTH] Usuário autenticado: {user.name}, {len(user.vehicles)} veículos")
+            self._show_vehicles(session)
         else:
-            # Mensagem de boas-vindas
-            whatsapp_client.send_message(
-                session.phone_number,
-                "Bem-vindo ao Sistema de Rastreamento!\n\n"
-                "Para acessar, envie:\nCPF,SENHA"
-            )
+            # Comandos de autenticação
+            if "," in message:
+                parts = [p.strip() for p in message.split(",")]
+                if len(parts) >= 2:
+                    identifier = parts[0]
+                    password = parts[1]
+                    
+                    # Tentar autenticar
+                    user = business_service.authenticate_user(identifier, password, "auth/login")
+                    
+                    if user and len(user.vehicles) > 0:
+                        session.user = user
+                        session.user.intrudution_shown = False
+                        session.state = "AUTHENTICATED"
+                        logger.info(f"[AUTH] Usuário autenticado: {user.name}, {len(user.vehicles)} veículos")
+                        self._show_vehicles(session)
+                    else:
+                        whatsapp_client.send_message(
+                            session.phone_number,
+                            "Credenciais invalidas ou nenhum veiculo encontrado.\n\n"
+                            "Envie: CPF,SENHA"
+                        )
+            else:
+                # Mensagem de boas-vindas
+                whatsapp_client.send_message(
+                    session.phone_number,
+                    "Bem-vindo ao Sistema de Rastreamento!\n\n"
+                    "Para acessar, envie:\nCPF,SENHA"
+                )
     
     def _handle_authenticated(self, session: Session, message: str, message_type: str = "text") -> None:
         """
@@ -371,3 +383,13 @@ class MessageHandler:
             session.phone_number,
             "Ate logo!"
         )
+
+    def remover_caracteres_esquerda(self,numero_str, quantidade=2):
+        """
+        Remove N caracteres da esquerda de uma string
+        
+        Args:
+            numero_str: String a ser processada
+            quantidade: Número de caracteres a remover (padrão: 2)
+        """
+        return numero_str[quantidade:]
